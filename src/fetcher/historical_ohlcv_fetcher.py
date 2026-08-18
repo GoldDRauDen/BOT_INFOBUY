@@ -42,7 +42,7 @@ def _throttle_retry(settings: Dict) -> Dict:
 def _fetch_history(quote: Quote, symbol: str, start: str, end: str, source: str) -> pd.DataFrame:
     """Goi Quote.history voi retry. Tra ve DataFrame rong neu loi."""
     last_err = None
-    for attempt in range(3):
+    for attempt in range(4):
         try:
             df = quote.history(symbol=symbol, start=start, end=end, interval="1D")
             if df is None:
@@ -50,8 +50,9 @@ def _fetch_history(quote: Quote, symbol: str, start: str, end: str, source: str)
             return df
         except Exception as e:  # noqa: BLE001
             last_err = e
-            if attempt < 2:
-                time.sleep(1.0)
+            # KBS community gioi han ~60 request/phut (ValueError dang RetryError):
+            # nghi 60s de het cua so rate-limit truoc lan thu cuoi.
+            time.sleep(60.0 if attempt == 2 else 1.5)
     logger.warning("Loi fetch %s tu %s: %s", symbol, source, last_err)
     return pd.DataFrame()
 
@@ -166,12 +167,14 @@ def fetch_all(conn=None, symbols: Optional[List[str]] = None) -> int:
 
         today = date.today().strftime("%Y-%m-%d")
         total = 0
+        # KBS community: ~60 request/phut -> dam bao delay >= 1.5s (<= 40 req/phut)
+        delay = max(cfg["delay"], 1.5)
         for sym in symbols:
             try:
                 total += fetch_symbol_ohlcv(conn, sym, cfg, today)
             except Exception as e:  # noqa: BLE001
                 logger.error("%s: loi khong mong doi (khong dung pipeline): %s", sym, e)
-            time.sleep(cfg["delay"])
+            time.sleep(delay)
         logger.info("Tong cong: %d dong OHLCV da ghi", total)
         return total
     finally:
@@ -196,3 +199,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
