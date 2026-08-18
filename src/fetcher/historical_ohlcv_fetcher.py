@@ -109,12 +109,13 @@ def fetch_symbol_ohlcv(conn, symbol: str, cfg: Dict, today: str) -> int:
         logger.warning("%s: symbol khong hop le tu %s (%s) - skip", symbol, SOURCE, e)
         return 0
     df = _fetch_history(quote, symbol, start, today, SOURCE)
+    src_used = SOURCE
     if df.empty:
         # Fallback MSN (chi ~1 nam) - ghi ro gioi han
         try:
             quote2 = Quote(symbol=symbol, source=FALLBACK_SOURCE)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("%s: symbol khong hop le tu %s (%s) - skip", symbol, FALLBACK_SOURCE, e)
+        except BaseException as e:  # noqa: BLE001 - bat ca SystemExit tu thu vien
+            logger.warning("%s: fallback %s that bai (%s) - skip", symbol, FALLBACK_SOURCE, e)
             return 0
         df = _fetch_history(quote2, symbol, start, today, FALLBACK_SOURCE)
         if df.empty:
@@ -122,8 +123,6 @@ def fetch_symbol_ohlcv(conn, symbol: str, cfg: Dict, today: str) -> int:
             return 0
         logger.info("%s: lay tu fallback %s (gioi han ~1 nam)", symbol, FALLBACK_SOURCE)
         src_used = FALLBACK_SOURCE
-    else:
-        src_used = SOURCE
 
     norm = normalize_ohlcv(df)
     if norm.empty:
@@ -172,8 +171,10 @@ def fetch_all(conn=None, symbols: Optional[List[str]] = None) -> int:
         for sym in symbols:
             try:
                 total += fetch_symbol_ohlcv(conn, sym, cfg, today)
-            except Exception as e:  # noqa: BLE001
+            except BaseException as e:  # noqa: BLE001 - bat ca SystemExit: khong de 1 ma giet pipeline
+                import traceback
                 logger.error("%s: loi khong mong doi (khong dung pipeline): %s", sym, e)
+                logger.error(traceback.format_exc())
             time.sleep(delay)
         logger.info("Tong cong: %d dong OHLCV da ghi", total)
         return total
@@ -183,6 +184,8 @@ def fetch_all(conn=None, symbols: Optional[List[str]] = None) -> int:
 
 
 def main() -> int:
+    import faulthandler
+    faulthandler.enable()
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -191,8 +194,10 @@ def main() -> int:
         n = fetch_all()
         print(f"[historical_ohlcv_fetcher] Xong: {n} dong da ghi")
         return 0
-    except Exception as e:  # noqa: BLE001
+    except BaseException as e:  # noqa: BLE001 - bat ca SystemExit, in traceback day du
+        import traceback
         logger.error("Fatal: %s", e)
+        logger.error(traceback.format_exc())
         print(f"[historical_ohlcv_fetcher] LOI: {e}")
         return 1
 
