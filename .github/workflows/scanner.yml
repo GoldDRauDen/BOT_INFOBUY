@@ -1,0 +1,94 @@
+name: stock-scanner
+
+# Chay TUAN TU giua cac run (workflow_dispatch + push + schedule)
+# tranh conflict khi nhieu run cung commit data/bot_buy.db
+concurrency:
+  group: stock-scanner
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 15 * * 1-5"   # 22:00 gio VN (UTC+7)
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Fetch symbols
+        run: python -m src.fetcher.symbol_fetcher
+      - name: Fetch OHLCV history (HOSE)
+        run: python -m src.fetcher.historical_ohlcv_fetcher
+      - name: Fetch fundamentals
+        run: python -m src.fetcher.fundamental_fetcher
+      - name: Fetch foreign flow (optional)
+        run: python -m src.fetcher.foreign_flow_fetcher
+      - name: Compute technical indicators
+        run: python -m src.indicators.technical_indicators
+      - name: Commit database
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/bot_buy.db
+          if git diff --quiet --cached; then
+            echo "No changes to database"
+          else
+            git commit -m "Update market database"
+            git pull --rebase origin main
+            git push origin main
+          fi
+
+  screening-and-report:
+    needs: fetch-data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run rule engine
+        run: python -m src.screening.rule_engine
+      - name: Check correlation
+        run: python -m src.risk.correlation_check
+      - name: Send Telegram report
+        run: python send_telegram.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+  weekly-backtest:
+    if: ${{ github.event_name == 'schedule' && github.event.schedule == '0 15 * * 1' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run walk-forward backtest
+        run: python -m src.backtest.walk_forward
+      - name: Commit database
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/bot_buy.db
+          if git diff --quiet --cached; then
+            echo "No changes to database"
+          else
+            git commit -m "Update backtest results"
+            git pull --rebase origin main
+            git push origin main
+          fi

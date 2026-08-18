@@ -1,0 +1,62 @@
+﻿app:
+  name: "Stock Scanner"
+  version: "1.0.0"
+
+discovery:
+  sample_size: 200
+
+crawler:
+  max_urls_per_source: 10
+  request_delay: 0.5
+
+fetcher:
+  timeout: 15
+  retries: 2
+  request_delay: 0.5
+  max_urls_per_capability: 5
+
+scheduler:
+  enabled: true
+  interval_minutes: 60
+  full_scan_every: 1440
+  force_refresh: false
+
+enhancer:
+  enabled: true
+  timeout: 15
+  retries: 3
+  request_delay: 1.0
+  max_html_pages: 5
+  max_js_bundles: 5
+  max_source_maps: 5
+  max_endpoint_candidates: 50
+  source_maps: true
+
+reverser:
+  enabled: true
+  timeout: 10
+  retries: 2
+  request_delay: 1.0
+  max_probes: 10
+
+telegram:
+  enabled: true
+  # Token doc tu env var TELEGRAM_BOT_TOKEN (uu tien) - KHONG commit token vao day
+  # chat_id doc tu env var TELEGRAM_CHAT_ID (uu tien) hoac cau hinh o day
+  chat_id: ""
+
+ai:
+  model: "gemini-flash-latest"
+  timeout: 30
+  watchlist:
+    - ACB
+    - VCB
+    - BID
+    - FPT
+    - HPG
+    - VNM
+    - VIC
+    - VHM
+    - GAS
+    - VPB
+

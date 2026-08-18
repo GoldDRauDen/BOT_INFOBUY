@@ -1,0 +1,23 @@
+# Cau hinh quy tac screening (rule engine)
+# Moi rule: name, weight, conditions (danh sach pandas-expression tren DataFrame
+# co cac cot: close, volume, ma20, ma50, ma200, rsi14, macd, macd_signal, atr14,
+# volume_ma20, pe_rel, pb_rel, yoy_growth, change_pct).
+# score = tong weight cua cac condition khop.
+# Luu y: pandas eval khong ho tro 'is not null' -> dung 'pb_rel == pb_rel'
+# (NaN != NaN nen condition false khi thieu du lieu - khong bia).
+
+rules:
+  - name: ma_breakout_volume_confirm
+    weight: 1.0
+    conditions:
+      - "close > ma20"
+      - "ma20 > ma50"
+      - "rsi14 > 50 and rsi14 < 70"
+      - "volume > volume_ma20 * 1.5"
+
+  - name: value_screening
+    weight: 1.0
+    conditions:
+      - "pb_rel == pb_rel and pb_rel < 0.8"
+      - "pe_rel == pe_rel and pe_rel < 0.8"
+      - "yoy_growth == yoy_growth and yoy_growth > 10"

@@ -1,0 +1,11 @@
+services:
+  scanner:
+    build: .
+    container_name: stock-scanner
+    volumes:
+      - ./config:/app/config
+      - ./output:/app/output
+      - ./history:/app/history
+      - ./state:/app/state
+    environment:
+      - TZ=Asia/Bangkok

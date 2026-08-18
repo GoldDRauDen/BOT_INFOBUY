@@ -1,0 +1,21 @@
+# Cau hinh cac nguon du lieu chung khoan
+# Moi nguon can: name, enabled, type, base_url
+
+sources:
+  - name: HOSE
+    enabled: true
+    type: official
+    base_url: https://www.hsx.vn/
+    description: Hochi Minh Stock Exchange
+
+  - name: HNX
+    enabled: true
+    type: official
+    base_url: https://www.hnx.vn/
+    description: Hanoi Stock Exchange
+
+  - name: UPCOM
+    enabled: false
+    type: official
+    base_url: https://www.hsx.vn/upcom
+    description: UPCOM - Unlisted Public Company Market
