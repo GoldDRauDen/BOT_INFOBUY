@@ -38,12 +38,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/bot_buy.db
+          git add -A
+          git status --porcelain
           if git diff --quiet --cached; then
             echo "No changes to database"
           else
             git commit -m "Update market database"
-            git pull --rebase origin main
+            # concurrency group da chan 2 run chay song song -> khong can pull --rebase
             git push origin main
           fi
 

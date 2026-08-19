@@ -51,8 +51,9 @@ def _fetch_history(quote: Quote, symbol: str, start: str, end: str, source: str)
         except Exception as e:  # noqa: BLE001
             last_err = e
             # KBS community gioi han ~60 request/phut (ValueError dang RetryError):
-            # nghi 60s de het cua so rate-limit truoc lan thu cuoi.
-            time.sleep(60.0 if attempt == 2 else 1.5)
+            # nghi 15s giua cac lan thu lai: du tranh rate-limit, khong lang phi khi
+            # loi la do du lieu symbol (32 ma/ngay loi -> tiet ~45s x 32 moi lan chay).
+            time.sleep(15.0 if attempt == 2 else 1.5)
     logger.warning("Loi fetch %s tu %s: %s", symbol, source, last_err)
     return pd.DataFrame()
 

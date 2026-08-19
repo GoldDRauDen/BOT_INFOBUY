@@ -9,3 +9,8 @@ venv/
 *.log
 # NOTE: data/bot_buy.db DUOC GIT-TRACK (spec Option A - SQLite commit vao repo).
 # Khong them data/*.db vao ignore - GHA can commit DB moi lan chay.
+
+# SQLite journal/WAL files - khong commit
+*.db-journal
+*.db-wal
+*.db-shm
