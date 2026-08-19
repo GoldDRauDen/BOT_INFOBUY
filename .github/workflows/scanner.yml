@@ -65,6 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # lay code + DB moi nhat (fetch-data da commit+push)
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -94,7 +96,8 @@ jobs:
             echo "No changes to database"
           else
             git commit -m "Update portfolio state"
-            git push origin main
+            # neu push reject (remote co thay doi), pull rebase autostash roi push lai
+            git push origin main || { git pull --rebase --autostash origin main && git push origin main; }
           fi
 
   weekly-backtest:

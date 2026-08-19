@@ -228,7 +228,10 @@ def main() -> int:
     # Them bao cao dinh luong tu DB (phase 1-4+6)
     quant = build_quant_report(logger)
     if quant:
-        text = text.rstrip() + "\n\n=== PHAN TICH DINH LUONG (BOT_INFOBUY) ===\n" + quant
+        from reporters.telegram_sender import _html_escape
+        # Escape toan bo (chua ky tu < > tu metadata conditions) - tranh loi Telegram parse HTML
+        text = (text.rstrip() + "\n\n=== PHAN TICH DINH LUONG (BOT_INFOBUY) ===\n"
+                + _html_escape(quant))
 
     print(f"\n  Tom tat bao cao ({len(text)} ky tu):")
     for line in text.splitlines():
