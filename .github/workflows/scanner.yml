@@ -8,6 +8,12 @@ concurrency:
 
 on:
   workflow_dispatch:
+    inputs:
+      backfill:
+        description: "Backfill full history tu START_DATE (chay 1 lan)"
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: "0 15 * * 1-5"   # 22:00 gio VN (UTC+7)
 
@@ -29,7 +35,7 @@ jobs:
         env:
           VNSTOCK_API_KEY: ${{ secrets.VNSTOCK_API_KEY }}
       - name: Fetch OHLCV history (HOSE)
-        run: python -m src.fetcher.historical_ohlcv_fetcher
+        run: python -m src.fetcher.historical_ohlcv_fetcher ${{ inputs.backfill == 'true' && '--backfill' || '' }}
         env:
           VNSTOCK_API_KEY: ${{ secrets.VNSTOCK_API_KEY }}
       - name: Fetch fundamentals
