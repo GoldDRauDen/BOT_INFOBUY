@@ -35,7 +35,7 @@ jobs:
         env:
           VNSTOCK_API_KEY: ${{ secrets.VNSTOCK_API_KEY }}
       - name: Fetch OHLCV history (HOSE)
-        run: python -m src.fetcher.historical_ohlcv_fetcher ${{ inputs.backfill == 'true' && '--backfill' || '' }}
+        run: python -m src.fetcher.historical_ohlcv_fetcher ${{ inputs.backfill && '--backfill' || '' }}
         env:
           VNSTOCK_API_KEY: ${{ secrets.VNSTOCK_API_KEY }}
       - name: Fetch fundamentals
