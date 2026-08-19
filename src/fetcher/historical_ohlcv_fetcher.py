@@ -28,7 +28,8 @@ logger = logging.getLogger("historical_ohlcv_fetcher")
 
 SOURCE = "KBS"
 FALLBACK_SOURCE = "MSN"  # chi ~1 nam lich su - fallback khi KBS loi
-START_DATE = "2023-01-01"
+# KBS tra toi da ~1992 rows/call (~8 nam, 2018->nay): 1 call/ma, du cho backtest dai han
+START_DATE = "2015-01-01"
 
 
 def _throttle_retry(settings: Dict) -> Dict:
@@ -93,14 +94,22 @@ def _last_date(conn, symbol: str) -> Optional[str]:
     return row["d"] if row and row["d"] else None
 
 
-def fetch_symbol_ohlcv(conn, symbol: str, cfg: Dict, today: str) -> int:
-    """Fetch + upsert OHLCV cho 1 symbol. Tra ve so dong ghi duoc."""
+def fetch_symbol_ohlcv(conn, symbol: str, cfg: Dict, today: str,
+                      force_backfill: bool = False) -> int:
+    """Fetch + upsert OHLCV cho 1 symbol. Tra ve so dong ghi duoc.
+
+    force_backfill=True: bo qua incremental, fetch tu START_DATE (dung de backfill
+    lich su sau khi tang do sau cua du lieu nguon).
+    """
     last = _last_date(conn, symbol)
-    if last:
-        start = (datetime.strptime(last, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-        if start > today:
-            logger.info("%s: da cap nhat den %s, skip", symbol, last)
-            return 0
+    if not force_backfill:
+        if last:
+            start = (datetime.strptime(last, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+            if start > today:
+                logger.info("%s: da cap nhat den %s, skip", symbol, last)
+                return 0
+        else:
+            start = START_DATE
     else:
         start = START_DATE
 
@@ -148,8 +157,12 @@ def fetch_symbol_ohlcv(conn, symbol: str, cfg: Dict, today: str) -> int:
     return written
 
 
-def fetch_all(conn=None, symbols: Optional[List[str]] = None) -> int:
-    """Fetch OHLCV cho danh sach symbol (mac dinh: toan bo HOSE + VNINDEX tu DB)."""
+def fetch_all(conn=None, symbols: Optional[List[str]] = None,
+            force_backfill: bool = False) -> int:
+    """Fetch OHLCV cho danh sach symbol (mac dinh: toan bo HOSE + VNINDEX tu DB).
+
+    force_backfill=True: fetch lai toan bo lich su (tu START_DATE) cho moi symbol.
+    """
     settings = load_settings()
     cfg = _throttle_retry(settings)
     own_conn = conn is None
@@ -171,7 +184,7 @@ def fetch_all(conn=None, symbols: Optional[List[str]] = None) -> int:
         delay = max(cfg["delay"], 1.5)
         for sym in symbols:
             try:
-                total += fetch_symbol_ohlcv(conn, sym, cfg, today)
+                total += fetch_symbol_ohlcv(conn, sym, cfg, today, force_backfill=force_backfill)
             except BaseException as e:  # noqa: BLE001 - bat ca SystemExit: khong de 1 ma giet pipeline
                 import traceback
                 logger.error("%s: loi khong mong doi (khong dung pipeline): %s", sym, e)
@@ -191,8 +204,13 @@ def main() -> int:
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+    import argparse
+    parser = argparse.ArgumentParser(description="Fetch OHLCV lich su HOSE + VNINDEX")
+    parser.add_argument("--backfill", action="store_true",
+                        help="Backfill toan bo lich su tu START_DATE (bo qua incremental)")
+    args = parser.parse_args()
     try:
-        n = fetch_all()
+        n = fetch_all(force_backfill=args.backfill)
         print(f"[historical_ohlcv_fetcher] Xong: {n} dong da ghi")
         return 0
     except BaseException as e:  # noqa: BLE001 - bat ca SystemExit, in traceback day du

@@ -102,3 +102,23 @@ Cron chạy `0 15 * * 1-5` (22:00 VN) + `workflow_dispatch`.
 ## Log
 
 Log ghi vào: `output/logs/app.log`
+
+## T?ng t? v?n an to?n (Phase 7)
+
+Ch?y trong job `screening-and-report` h?ng ng?y:
+- `src.risk.market_regime` ? tr?ng th?i th? tr??ng (VNINDEX vs MA200 ? BULLISH/BEARISH).
+- `src.screening.rule_engine` ? ch?m ?i?m to?n m?, ?u ti?n rule `safe_quality_growth`
+  (trend d?i h?n + thanh kho?n + ??nh gi? h?p l?).
+- `src.portfolio.manager` ? danh m?c m?u 10 m?: 10% v?n/m? (t?i ?a 15%), c?t l? 8%,
+  t?i c?n b?ng m?i th? 2. Ghi `portfolio_positions` + `portfolio_trades` v?o DB.
+- `src.risk.correlation_check` ? c?nh b?o r?i ro t?p trung ng?nh.
+- B?o c?o Telegram: th? tr??ng ? top 10 an to?n + l? do ? danh m?c m?u PnL ? c?nh b?o.
+- Backfill l?ch s? s?u: `python -m src.fetcher.historical_ohlcv_fetcher --backfill`
+  (1 l?n, fetch t? 2015; KBS tr? t?i ?a ~1992 phi?n/m?, t?c t? ~2018).
+- Ngu?n d? li?u: vnstock 4.0.6 (KBS). ??ng k? key mi?n ph? t?i vnstocks.com ?? c?
+  60 request/ph?t thay v? 20 (guest); ??t v?o GitHub Secrets `VNSTOCK_API_KEY`.
+
+## Ki?m ch?ng hi?u qu?
+
+Quy t?c b?t bi?n: signal ch? hi?n th? trong b?o c?o khi ?? qua backtest/paper theo d?i.
+S? li?u (CAGR/Sharpe/MaxDD/WinRate) ???c ghi r? trong b?o c?o, k? c? khi thua benchmark.

@@ -96,3 +96,26 @@ CREATE TABLE IF NOT EXISTS backtest_trades (
     exit_reason TEXT,
     PRIMARY KEY (run_id, symbol, entry_date)
 );
+
+-- Bang portfolio (paper trading - theo doi danh muc mau, khong dung tien that)
+CREATE TABLE IF NOT EXISTS portfolio_positions (
+    symbol TEXT PRIMARY KEY,
+    entry_date TEXT,
+    entry_price REAL,
+    shares REAL,
+    stop_price REAL,
+    weight_pct REAL,
+    status TEXT DEFAULT 'active',
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT,
+    action TEXT,
+    trade_date TEXT,
+    price REAL,
+    shares REAL,
+    amount REAL,
+    reason TEXT
+);

@@ -26,10 +26,16 @@ jobs:
         run: pip install -r requirements.txt
       - name: Fetch symbols
         run: python -m src.fetcher.symbol_fetcher
+        env:
+          VNSTOCK_API_KEY: ${{ secrets.VNSTOCK_API_KEY }}
       - name: Fetch OHLCV history (HOSE)
         run: python -m src.fetcher.historical_ohlcv_fetcher
+        env:
+          VNSTOCK_API_KEY: ${{ secrets.VNSTOCK_API_KEY }}
       - name: Fetch fundamentals
         run: python -m src.fetcher.fundamental_fetcher
+        env:
+          VNSTOCK_API_KEY: ${{ secrets.VNSTOCK_API_KEY }}
       - name: Fetch foreign flow (optional)
         run: python -m src.fetcher.foreign_flow_fetcher
       - name: Compute technical indicators
@@ -60,6 +66,10 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run rule engine
         run: python -m src.screening.rule_engine
+      - name: Check market regime
+        run: python -m src.risk.market_regime
+      - name: Update paper portfolio
+        run: python -m src.portfolio.manager
       - name: Check correlation
         run: python -m src.risk.correlation_check
       - name: Send Telegram report
@@ -68,6 +78,18 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - name: Commit portfolio updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git status --porcelain
+          if git diff --quiet --cached; then
+            echo "No changes to database"
+          else
+            git commit -m "Update portfolio state"
+            git push origin main
+          fi
 
   weekly-backtest:
     if: ${{ github.event_name == 'schedule' && github.event.schedule == '0 15 * * 1' }}

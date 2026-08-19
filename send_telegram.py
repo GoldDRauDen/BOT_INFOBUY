@@ -133,6 +133,48 @@ def build_quant_report(logger: logging.Logger) -> str:
         else:
             lines.append("  - Chua co du lieu tuong quan (chay src.risk.correlation_check).")
 
+        # 5. Trang thai thi truong (regime)
+        try:
+            regime_path = Path(__file__).parent / "output" / "market_regime.json"
+            if regime_path.exists():
+                data = json.loads(regime_path.read_text(encoding="utf-8"))
+                if data.get("regime") and data["regime"] != "unknown":
+                    lines.append(
+                        f"  THI TRUONG ({data.get('trade_date')}): {data['regime']} "
+                        f"(VNINDEX {data.get('vnindex_close')} vs MA200 {data.get('ma200')})"
+                    )
+                    if data["regime"] == "BEARISH":
+                        lines.append("    - CANH BAO: VNINDEX duoi MA200 - thi truong yeu, CHI MUA THAN TRONG.")
+            else:
+                lines.append("  - Chua co du lieu thi truong (chay src.risk.market_regime).")
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Loi doc market_regime.json: {e}")
+
+        # 6. Danh muc mau (paper portfolio - 10 ma an toan)
+        try:
+            pf_path = Path(__file__).parent / "output" / "portfolio_report.json"
+            if pf_path.exists():
+                data = json.loads(pf_path.read_text(encoding="utf-8"))
+                if data.get("positions") is not None:
+                    lines.append(f"  DANH MUC MAU ({data.get('trade_date')}):")
+                    lines.append(
+                        f"    - Tong gia tri: {data.get('total_value'):,.0f} VND | "
+                        f"PnL: {data.get('pnl'):,.0f} ({data.get('pnl_pct')}%)"
+                    )
+                    for pos in data["positions"][:10]:
+                        gain = pos.get("gain_pct")
+                        gs = f"{gain:+.2f}%" if gain is not None else "N/A"
+                        lines.append(
+                            f"    - {pos['symbol']}: vao {pos['entry_price']:,.0f} | "
+                            f"hien {pos['close']:,.0f} | {gs}"
+                        )
+                else:
+                    lines.append("  - Danh muc mau: chua co du lieu (chay src.portfolio.manager).")
+            else:
+                lines.append("  - Danh muc mau: chua chay (chay src.portfolio.manager).")
+        except (json.JSONDecodeError, OSError, TypeError) as e:
+            logger.warning(f"Loi doc portfolio_report.json: {e}")
+
         conn.close()
         return "\n".join(lines)
     except Exception as e:  # noqa: BLE001

@@ -21,3 +21,14 @@ rules:
       - "pb_rel == pb_rel and pb_rel < 0.8"
       - "pe_rel == pe_rel and pe_rel < 0.8"
       - "yoy_growth == yoy_growth and yoy_growth > 10"
+
+  - name: safe_quality_growth
+    weight: 2.0
+    conditions:
+      - "close > ma200"
+      - "ma50 > ma200"
+      - "rsi14 > 45 and rsi14 < 70"
+      - "volume_ma20 > 300000"
+      - "yoy_growth == yoy_growth and yoy_growth > 0"
+      - "pe_rel == pe_rel and pe_rel < 1.0"
+      - "pb_rel == pb_rel and pb_rel < 1.2"
