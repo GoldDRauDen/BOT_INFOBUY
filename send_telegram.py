@@ -42,15 +42,49 @@ def _db_conn() -> sqlite3.Connection:
     return conn
 
 
+def _fmt_vnd(x) -> str:
+    """Format so tien VND co dau phay. Tra 'N/A' neu None."""
+    if x is None:
+        return "N/A"
+    return f"{float(x):,.0f}"
+
+def _fmt_pct(x, digits: int = 2) -> str:
+    """Format phan tram gan gon. Tra 'N/A' neu None."""
+    if x is None:
+        return "N/A"
+    return f"{float(x):.{digits}f}%"
+
 def build_quant_report(logger: logging.Logger) -> str:
-    """Doc DB -> bao cao dinh luong: top 10 signals, backtest WF, VNINDEX, tuong quan."""
+    """Doc DB -> bao cao dinh luong gon cho giam doc (HTML-safe, noi dung chinh).
+
+    Gom: trang thai thi truong -> top 10 ma an toan -> danh muc mau (paper)
+    -> ket qua kiem chung backtest -> canh bao rui ro.
+    """
     if not DB_PATH.exists():
-        return "  - Chua co du lieu phan tich dinh luong (data/bot_buy.db chua duoc tao)."
+        return ""
     try:
         conn = _db_conn()
         lines: list = []
 
-        # 1. Top 10 ma theo score (signal moi nhat moi ma)
+        # 1. Trang thai thi truong (regime)
+        regime_path = Path(__file__).parent / "output" / "market_regime.json"
+        if regime_path.exists():
+            try:
+                data = json.loads(regime_path.read_text(encoding="utf-8"))
+                regime = data.get("regime")
+                if regime and regime != "unknown":
+                    vn = _fmt_vnd(data.get("vnindex_close"))
+                    ma = _fmt_vnd(data.get("ma200"))
+                    emoji = "??" if regime == "BULLISH" else "??"
+                    lines.append(f"<b>?? TH? TR??NG:</b> {emoji} {regime}")
+                    lines.append(f"VNINDEX {vn} | MA200 {ma}")
+                    if regime == "BEARISH":
+                        lines.append("?? Th? tr??ng y?u ? ch? xem x?t, th?n tr?ng, h?n ch? mua m?i.")
+                    lines.append("")
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        # 2. Top 10 ma an toan (theo score, gia moi nhat)
         try:
             rows = conn.execute(
                 """
@@ -65,122 +99,74 @@ def build_quant_report(logger: logging.Logger) -> str:
                 """
             ).fetchall()
             if rows:
-                lines.append("  TOP 10 MA (theo score):")
-                for r in rows:
-                    meta = ""
-                    try:
-                        md = json.loads(r["metadata_json"] or "{}")
-                        meta = ", ".join(md.get("conditions", []))[:80]
-                    except json.JSONDecodeError:
-                        pass
-                    price = f"{r['price']:,.0f} VND" if r["price"] else "N/A"
-                    lines.append(
-                        f"    - {r['symbol']} [{r['strategy_name']}] score={r['score']:.1f} "
-                        f"gia={price} | {meta}"
-                    )
+                lines.append("<b>?? TOP 10 AN TO?N (rule-based):</b>")
+                for rank, r in enumerate(rows, 1):
+                    price = _fmt_vnd(r["price"])
+                    lines.append(f"{rank}. {r['symbol']} ? {price} VND")
+                lines.append("B? l?c: xu h??ng d?i h?n + thanh kho?n + ??nh gi? h?p l?.")
+                lines.append("")
             else:
-                lines.append("  - Chua co signal nao tu rule engine.")
+                lines.append("Ch?a c? t?n hi?u t? rule engine.")
         except sqlite3.Error as e:
             logger.warning(f"Loi doc signals: {e}")
 
-        # 2. Backtest metrics (walk-forward moi nhat)
+        # 3. Danh muc mau (paper portfolio)
+        pf_path = Path(__file__).parent / "output" / "portfolio_report.json"
+        if pf_path.exists():
+            try:
+                data = json.loads(pf_path.read_text(encoding="utf-8"))
+                if data.get("positions") is not None:
+                    lines.append(f"<b>?? DANH M?C M?U</b> (10 m?, 10% v?n/m?, c?t l? 8%):")
+                    lines.append(
+                        f"T?ng {_fmt_vnd(data.get('total_value'))} VND | "
+                        f"PnL {_fmt_vnd(data.get('pnl'))} ({_fmt_pct(data.get('pnl_pct'))})"
+                    )
+                    for pos in data["positions"][:10]:
+                        gain = pos.get("gain_pct")
+                        gs = f"{gain:+.2f}%" if gain is not None else "N/A"
+                        lines.append(
+                            f"  ? {pos['symbol']} {_fmt_vnd(pos['close'])} VND ({gs})"
+                        )
+                    lines.append("")
+                else:
+                    lines.append("Danh m?c m?u: ch?a c? d? li?u.")
+            except (json.JSONDecodeError, OSError, TypeError) as e:
+                logger.warning(f"Loi doc portfolio_report.json: {e}")
+
+        # 4. Ket qua kiem chung (backtest walk-forward)
         try:
             run = conn.execute(
                 "SELECT metrics_json FROM backtest_runs "
                 "WHERE strategy_name = 'wf_rule_based' ORDER BY started_at DESC LIMIT 1"
             ).fetchone()
             if run:
-                metrics = json.loads(run["metrics_json"])
-                lines.append("  WALK-FORWARD (moi nhat):")
-                lines.append(
-                    f"    - CAGR mean={metrics.get('cagr_mean')}, std={metrics.get('cagr_std')}"
-                )
-                lines.append(
-                    f"    - Sharpe mean={metrics.get('sharpe_mean')}, "
-                    f"MaxDD mean={metrics.get('max_drawdown_mean')}"
-                )
-                if metrics.get("warning"):
-                    lines.append(f"    - CANH BAO: {metrics['warning']}")
-            else:
-                lines.append("  - Backtest: chua co backtest (walk-forward chua chay).")
-        except sqlite3.Error as e:
+                m = json.loads(run["metrics_json"])
+                cagr = _fmt_pct(m.get("cagr_mean") * 100 if m.get("cagr_mean") is not None else None)
+                sharpe = f"{m['sharpe_mean']:.2f}" if m.get("sharpe_mean") is not None else "N/A"
+                maxdd = _fmt_pct(m.get("max_drawdown_mean") * 100 if m.get("max_drawdown_mean") is not None else None)
+                wr = _fmt_pct(m.get("win_rate_mean") * 100 if m.get("win_rate_mean") is not None else None)
+                lines.append(f"<b>?? KI?M CH?NG (walk-forward {m.get('n_windows')} k?):</b>")
+                lines.append(f"CAGR {cagr} | Sharpe {sharpe} | MaxDD {maxdd} | Win {wr}")
+                lines.append("Ph?i th?ng benchmark ?n ??nh nhi?u k? m?i ?? tin ? k?t qu? n?y ?ang theo d?i, KH?NG ph?i khuy?n ngh? mua.")
+                lines.append("")
+        except (sqlite3.Error, json.JSONDecodeError) as e:
             logger.warning(f"Loi doc backtest: {e}")
 
-        # 3. So sanh VNINDEX (benchmark tu backtest_runs moi nhat)
-        try:
-            bm = conn.execute(
-                "SELECT benchmark_json FROM backtest_runs "
-                "ORDER BY started_at DESC LIMIT 1"
-            ).fetchone()
-            if bm:
-                lines.append("  - VNINDEX benchmark: xem window trong backtest_runs (id cuoi).")
-        except sqlite3.Error as e:
-            logger.warning(f"Loi doc benchmark: {e}")
-
-        # 4. Canh bao tuong quan
+        # 5. Canh bao rui ro tuong quan
         corr_path = Path(__file__).parent / "output" / "correlation_check.json"
         if corr_path.exists():
             try:
-                data = json.loads(corr_path.read_text(encoding="utf-8"))
-                if data.get("concentration_warning"):
-                    lines.append(f"  - {data['concentration_warning']}")
-                if data.get("avg_correlation") is not None:
-                    lines.append(
-                        f"  - Avg correlation (60 phien): {data['avg_correlation']:.4f}"
-                    )
+                cdata = json.loads(corr_path.read_text(encoding="utf-8"))
+                if cdata.get("concentration_warning"):
+                    lines.append(f"?? {cdata['concentration_warning']}")
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning(f"Loi doc correlation_check.json: {e}")
-        else:
-            lines.append("  - Chua co du lieu tuong quan (chay src.risk.correlation_check).")
-
-        # 5. Trang thai thi truong (regime)
-        try:
-            regime_path = Path(__file__).parent / "output" / "market_regime.json"
-            if regime_path.exists():
-                data = json.loads(regime_path.read_text(encoding="utf-8"))
-                if data.get("regime") and data["regime"] != "unknown":
-                    lines.append(
-                        f"  THI TRUONG ({data.get('trade_date')}): {data['regime']} "
-                        f"(VNINDEX {data.get('vnindex_close')} vs MA200 {data.get('ma200')})"
-                    )
-                    if data["regime"] == "BEARISH":
-                        lines.append("    - CANH BAO: VNINDEX duoi MA200 - thi truong yeu, CHI MUA THAN TRONG.")
-            else:
-                lines.append("  - Chua co du lieu thi truong (chay src.risk.market_regime).")
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning(f"Loi doc market_regime.json: {e}")
-
-        # 6. Danh muc mau (paper portfolio - 10 ma an toan)
-        try:
-            pf_path = Path(__file__).parent / "output" / "portfolio_report.json"
-            if pf_path.exists():
-                data = json.loads(pf_path.read_text(encoding="utf-8"))
-                if data.get("positions") is not None:
-                    lines.append(f"  DANH MUC MAU ({data.get('trade_date')}):")
-                    lines.append(
-                        f"    - Tong gia tri: {data.get('total_value'):,.0f} VND | "
-                        f"PnL: {data.get('pnl'):,.0f} ({data.get('pnl_pct')}%)"
-                    )
-                    for pos in data["positions"][:10]:
-                        gain = pos.get("gain_pct")
-                        gs = f"{gain:+.2f}%" if gain is not None else "N/A"
-                        lines.append(
-                            f"    - {pos['symbol']}: vao {pos['entry_price']:,.0f} | "
-                            f"hien {pos['close']:,.0f} | {gs}"
-                        )
-                else:
-                    lines.append("  - Danh muc mau: chua co du lieu (chay src.portfolio.manager).")
-            else:
-                lines.append("  - Danh muc mau: chua chay (chay src.portfolio.manager).")
-        except (json.JSONDecodeError, OSError, TypeError) as e:
-            logger.warning(f"Loi doc portfolio_report.json: {e}")
 
         conn.close()
         return "\n".join(lines)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Loi build quant report (khong fail): {e}")
-        return "  - Loi doc du lieu phan tich dinh luong."
-
+        return ""
 
 def main() -> int:
     logging.basicConfig(
@@ -234,11 +220,9 @@ def main() -> int:
 
     # Gui rieng 2 tin nhan de khong vuot gioi han 4096 ky tu cua Telegram:
     # Tin 1 = phan tich dinh luong (cho giam doc), Tin 2 = watchlist + AI.
-    from reporters.telegram_sender import _html_escape
     sent = []
     if quant:
-        quant_text = ("PHAN TICH DINH LUONG BOT_INFOBUY\n"
-                      + _html_escape(quant))
+        quant_text = "?? <b>PH?N T?CH ??NH L??NG BOT_INFOBUY</b>\n" + quant
         if len(quant_text) > 4000:
             quant_text = quant_text[:4000]
         print(f"\n  Gui tin 1 (dinh luong, {len(quant_text)} ky tu)...")
