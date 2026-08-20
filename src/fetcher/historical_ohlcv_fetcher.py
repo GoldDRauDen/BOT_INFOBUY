@@ -29,7 +29,8 @@ logger = logging.getLogger("historical_ohlcv_fetcher")
 SOURCE = "KBS"
 FALLBACK_SOURCE = "MSN"  # chi ~1 nam lich su - fallback khi KBS loi
 # KBS tra toi da ~1992 rows/call (~8 nam, 2018->nay): 1 call/ma, du cho backtest dai han
-START_DATE = "2015-01-01"
+START_DATE = "2021-01-01"  # gioi han GitHub 100MB/file: _backfillDB phai < 100MB
+
 
 
 def _throttle_retry(settings: Dict) -> Dict:

@@ -227,22 +227,28 @@ def main() -> int:
 
     # Them bao cao dinh luong tu DB (phase 1-4+6)
     quant = build_quant_report(logger)
-    if quant:
-        from reporters.telegram_sender import _html_escape
-        # Escape toan bo (chua ky tu < > tu metadata conditions) - tranh loi Telegram parse HTML
-        text = (text.rstrip() + "\n\n=== PHAN TICH DINH LUONG (BOT_INFOBUY) ===\n"
-                + _html_escape(quant))
 
-    print(f"\n  Tom tat bao cao ({len(text)} ky tu):")
+    print(f"\n  Tom tat bao cao ({len(text)} ky tu, +{len(quant or '')} ky tu dinh luong):")
     for line in text.splitlines():
         print(f"    {line}")
 
-    # Gui
-    print("\n  Gui qua Telegram...")
-    success = send_telegram(text, logger=logger)
+    # Gui rieng 2 tin nhan de khong vuot gioi han 4096 ky tu cua Telegram:
+    # Tin 1 = phan tich dinh luong (cho giam doc), Tin 2 = watchlist + AI.
+    from reporters.telegram_sender import _html_escape
+    sent = []
+    if quant:
+        quant_text = ("PHAN TICH DINH LUONG BOT_INFOBUY\n"
+                      + _html_escape(quant))
+        if len(quant_text) > 4000:
+            quant_text = quant_text[:4000]
+        print(f"\n  Gui tin 1 (dinh luong, {len(quant_text)} ky tu)...")
+        sent.append(send_telegram(quant_text, logger=logger))
+    print(f"\n  Gui tin 2 (bao cao chung, {len(text)} ky tu)...")
+    sent.append(send_telegram(text, logger=logger))
 
+    success = all(sent)
     if success:
-        print("\n  ✅ Da gui bao cao Telegram thanh cong")
+        print("\n  ? Da gui bao cao Telegram thanh cong")
         return 0
 
     # Thieu credential hoac gui loi -> khong fail CI (theo yeu cau)

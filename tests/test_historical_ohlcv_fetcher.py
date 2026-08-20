@@ -98,7 +98,7 @@ class TestFetchSymbol:
             # lan sau: fetch tu 2023-01-05 + 1 = 2023-01-06
             fetch_symbol_ohlcv(conn, "ACB", {"delay": 0, "retries": 0}, "2023-01-10")
         starts = [c.kwargs["start"] for c in MockQuote.return_value.history.call_args_list]
-        assert starts == ["2015-01-01", "2023-01-06"]  # START_DATE hien tai = 2015
+        assert starts == ["2021-01-01", "2023-01-06"]  # START_DATE hien tai = 2021
         ends = [c.kwargs["end"] for c in MockQuote.return_value.history.call_args_list]
         assert ends == ["2023-01-10", "2023-01-10"]
 
