@@ -1,4 +1,4 @@
-name: stock-scanner
+﻿name: stock-scanner
 
 # Chay TUAN TU giua cac run (workflow_dispatch + push + schedule)
 # tranh conflict khi nhieu run cung commit data/bot_buy.db
@@ -56,8 +56,7 @@ jobs:
             echo "No changes to database"
           else
             git commit -m "Update market database"
-            # concurrency group da chan 2 run chay song song -> khong can pull --rebase
-            git push origin main
+            git push origin main || { git pull --rebase --autostash origin main && git push origin main; }
           fi
 
   screening-and-report:
@@ -66,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main   # lay code + DB moi nhat (fetch-data da commit+push)
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -96,7 +95,6 @@ jobs:
             echo "No changes to database"
           else
             git commit -m "Update portfolio state"
-            # neu push reject (remote co thay doi), pull rebase autostash roi push lai
             git push origin main || { git pull --rebase --autostash origin main && git push origin main; }
           fi
 
@@ -121,6 +119,5 @@ jobs:
             echo "No changes to database"
           else
             git commit -m "Update backtest results"
-            git pull --rebase origin main
-            git push origin main
+            git push origin main || { git pull --rebase --autostash origin main && git push origin main; }
           fi

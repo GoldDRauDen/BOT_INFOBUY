@@ -75,11 +75,11 @@ def build_quant_report(logger: logging.Logger) -> str:
                 if regime and regime != "unknown":
                     vn = _fmt_vnd(data.get("vnindex_close"))
                     ma = _fmt_vnd(data.get("ma200"))
-                    emoji = "??" if regime == "BULLISH" else "??"
-                    lines.append(f"<b>?? TH? TR??NG:</b> {emoji} {regime}")
+                    emoji = "📈" if regime == "BULLISH" else "📉"
+                    lines.append(f"<b>🏛 THỈ TRƯỜNG:</b> {emoji} {regime}")
                     lines.append(f"VNINDEX {vn} | MA200 {ma}")
                     if regime == "BEARISH":
-                        lines.append("?? Th? tr??ng y?u ? ch? xem x?t, th?n tr?ng, h?n ch? mua m?i.")
+                        lines.append("⚠️ Thị trường yếu – chỉ xem xét, thận trọng, hạn chế mua mới.")
                     lines.append("")
             except (json.JSONDecodeError, OSError):
                 pass
@@ -99,14 +99,14 @@ def build_quant_report(logger: logging.Logger) -> str:
                 """
             ).fetchall()
             if rows:
-                lines.append("<b>?? TOP 10 AN TO?N (rule-based):</b>")
+                lines.append("<b>📋 TOP 10 AN TOÀN (rule-based):</b>")
                 for rank, r in enumerate(rows, 1):
                     price = _fmt_vnd(r["price"])
-                    lines.append(f"{rank}. {r['symbol']} ? {price} VND")
-                lines.append("B? l?c: xu h??ng d?i h?n + thanh kho?n + ??nh gi? h?p l?.")
+                    lines.append(f"{rank}. {r['symbol']}  ▸ {price} VND")
+                lines.append("Bộ lọc: xu hướng dài hạn + thanh khoản + định giá hợp lý.")
                 lines.append("")
             else:
-                lines.append("Ch?a c? t?n hi?u t? rule engine.")
+                lines.append("Chưa có tín hiệu từ rule engine.")
         except sqlite3.Error as e:
             logger.warning(f"Loi doc signals: {e}")
 
@@ -116,20 +116,20 @@ def build_quant_report(logger: logging.Logger) -> str:
             try:
                 data = json.loads(pf_path.read_text(encoding="utf-8"))
                 if data.get("positions") is not None:
-                    lines.append(f"<b>?? DANH M?C M?U</b> (10 m?, 10% v?n/m?, c?t l? 8%):")
+                    lines.append(f"<b>📂 DANH MỤC MẤU</b> (10 mã, 10% vốn/mã, cắt lỗ 8%):")
                     lines.append(
-                        f"T?ng {_fmt_vnd(data.get('total_value'))} VND | "
+                        f"Tổng {_fmt_vnd(data.get('total_value'))} VND | "
                         f"PnL {_fmt_vnd(data.get('pnl'))} ({_fmt_pct(data.get('pnl_pct'))})"
                     )
                     for pos in data["positions"][:10]:
                         gain = pos.get("gain_pct")
                         gs = f"{gain:+.2f}%" if gain is not None else "N/A"
                         lines.append(
-                            f"  ? {pos['symbol']} {_fmt_vnd(pos['close'])} VND ({gs})"
+                            f"   ▸ {pos['symbol']} {_fmt_vnd(pos['close'])} VND ({gs})"
                         )
                     lines.append("")
                 else:
-                    lines.append("Danh m?c m?u: ch?a c? d? li?u.")
+                    lines.append("Danh mục mẫu: chưa có dữ liệu.")
             except (json.JSONDecodeError, OSError, TypeError) as e:
                 logger.warning(f"Loi doc portfolio_report.json: {e}")
 
@@ -145,9 +145,9 @@ def build_quant_report(logger: logging.Logger) -> str:
                 sharpe = f"{m['sharpe_mean']:.2f}" if m.get("sharpe_mean") is not None else "N/A"
                 maxdd = _fmt_pct(m.get("max_drawdown_mean") * 100 if m.get("max_drawdown_mean") is not None else None)
                 wr = _fmt_pct(m.get("win_rate_mean") * 100 if m.get("win_rate_mean") is not None else None)
-                lines.append(f"<b>?? KI?M CH?NG (walk-forward {m.get('n_windows')} k?):</b>")
+                lines.append(f"<b>✅ KIỂM CHỨNG (walk-forward {m.get('n_windows')}  kỳ):</b>")
                 lines.append(f"CAGR {cagr} | Sharpe {sharpe} | MaxDD {maxdd} | Win {wr}")
-                lines.append("Ph?i th?ng benchmark ?n ??nh nhi?u k? m?i ?? tin ? k?t qu? n?y ?ang theo d?i, KH?NG ph?i khuy?n ngh? mua.")
+                lines.append("Phải thắng benchmark ở nhiều kỳ mới tin kết quả này đang theo dõi, KHÔNG phải khuyến nghị mua.")
                 lines.append("")
         except (sqlite3.Error, json.JSONDecodeError) as e:
             logger.warning(f"Loi doc backtest: {e}")
@@ -158,7 +158,7 @@ def build_quant_report(logger: logging.Logger) -> str:
             try:
                 cdata = json.loads(corr_path.read_text(encoding="utf-8"))
                 if cdata.get("concentration_warning"):
-                    lines.append(f"?? {cdata['concentration_warning']}")
+                    lines.append(f"⚠️ {cdata['concentration_warning']}")
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning(f"Loi doc correlation_check.json: {e}")
 
@@ -222,7 +222,7 @@ def main() -> int:
     # Tin 1 = phan tich dinh luong (cho giam doc), Tin 2 = watchlist + AI.
     sent = []
     if quant:
-        quant_text = "?? <b>PH?N T?CH ??NH L??NG BOT_INFOBUY</b>\n" + quant
+        quant_text = "📊 <b>PHÂN TÍCH ĐỆNH LƯỜNG BOT_INFOBUY</b>\n" + quant
         if len(quant_text) > 4000:
             quant_text = quant_text[:4000]
         print(f"\n  Gui tin 1 (dinh luong, {len(quant_text)} ky tu)...")
@@ -232,7 +232,7 @@ def main() -> int:
 
     success = all(sent)
     if success:
-        print("\n  ? Da gui bao cao Telegram thanh cong")
+        print("\n  ✅ Đã gửi báo cáo Telegram thành công")
         return 0
 
     # Thieu credential hoac gui loi -> khong fail CI (theo yeu cau)
