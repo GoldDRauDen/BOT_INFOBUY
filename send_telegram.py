@@ -9,14 +9,8 @@ Credentials:
   - env var: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (uu tien)
   - hoac config/settings.yaml: telegram.token, telegram.chat_id
 Thieu credentials -> in canh bao SKIP, exit 0 (khong fail CI).
-
-Phase 1-4+6: doc signals + backtest metrics moi nhat tu DB (data/bot_buy.db),
-so sanh VNINDEX, canh bao tuong quan. Neu khong co metric backtest -> ghi
-"chua co backtest" chu khong hien signal tran.
 """
-import json
 import logging
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -33,140 +27,6 @@ from reporters.telegram_sender import build_summary, send_telegram
 from fetcher.real_data_fetcher import run_real_data_fetch
 from analyst.ai_analyst import run_ai_analysis
 
-DB_PATH = Path(__file__).parent / "data" / "bot_buy.db"
-
-
-def _db_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _fmt_vnd(x) -> str:
-    """Format so tien VND co dau phay. Tra 'N/A' neu None."""
-    if x is None:
-        return "N/A"
-    return f"{float(x):,.0f}"
-
-def _fmt_pct(x, digits: int = 2) -> str:
-    """Format phan tram gan gon. Tra 'N/A' neu None."""
-    if x is None:
-        return "N/A"
-    return f"{float(x):.{digits}f}%"
-
-def build_quant_report(logger: logging.Logger) -> str:
-    """Doc DB -> bao cao dinh luong gon cho giam doc (HTML-safe, noi dung chinh).
-
-    Gom: trang thai thi truong -> top 10 ma an toan -> danh muc mau (paper)
-    -> ket qua kiem chung backtest -> canh bao rui ro.
-    """
-    if not DB_PATH.exists():
-        return ""
-    try:
-        conn = _db_conn()
-        lines: list = []
-
-        # 1. Trang thai thi truong (regime)
-        regime_path = Path(__file__).parent / "output" / "market_regime.json"
-        if regime_path.exists():
-            try:
-                data = json.loads(regime_path.read_text(encoding="utf-8"))
-                regime = data.get("regime")
-                if regime and regime != "unknown":
-                    vn = _fmt_vnd(data.get("vnindex_close"))
-                    ma = _fmt_vnd(data.get("ma200"))
-                    emoji = "??" if regime == "BULLISH" else "??"
-                    lines.append(f"<b>?? TH? TR??NG:</b> {emoji} {regime}")
-                    lines.append(f"VNINDEX {vn} | MA200 {ma}")
-                    if regime == "BEARISH":
-                        lines.append("?? Th? tr??ng y?u ? ch? xem x?t, th?n tr?ng, h?n ch? mua m?i.")
-                    lines.append("")
-            except (json.JSONDecodeError, OSError):
-                pass
-
-        # 2. Top 10 ma an toan (theo score, gia moi nhat)
-        try:
-            rows = conn.execute(
-                """
-                SELECT s.symbol, s.strategy_name, s.score, s.metadata_json,
-                       o.close AS price
-                FROM signals s
-                LEFT JOIN ohlcv_daily o
-                  ON o.symbol = s.symbol
-                 AND o.trade_date = (SELECT MAX(trade_date) FROM ohlcv_daily WHERE symbol = s.symbol)
-                WHERE s.trade_date = (SELECT MAX(trade_date) FROM signals)
-                ORDER BY s.score DESC LIMIT 10
-                """
-            ).fetchall()
-            if rows:
-                lines.append("<b>?? TOP 10 AN TO?N (rule-based):</b>")
-                for rank, r in enumerate(rows, 1):
-                    price = _fmt_vnd(r["price"])
-                    lines.append(f"{rank}. {r['symbol']} ? {price} VND")
-                lines.append("B? l?c: xu h??ng d?i h?n + thanh kho?n + ??nh gi? h?p l?.")
-                lines.append("")
-            else:
-                lines.append("Ch?a c? t?n hi?u t? rule engine.")
-        except sqlite3.Error as e:
-            logger.warning(f"Loi doc signals: {e}")
-
-        # 3. Danh muc mau (paper portfolio)
-        pf_path = Path(__file__).parent / "output" / "portfolio_report.json"
-        if pf_path.exists():
-            try:
-                data = json.loads(pf_path.read_text(encoding="utf-8"))
-                if data.get("positions") is not None:
-                    lines.append(f"<b>?? DANH M?C M?U</b> (10 m?, 10% v?n/m?, c?t l? 8%):")
-                    lines.append(
-                        f"T?ng {_fmt_vnd(data.get('total_value'))} VND | "
-                        f"PnL {_fmt_vnd(data.get('pnl'))} ({_fmt_pct(data.get('pnl_pct'))})"
-                    )
-                    for pos in data["positions"][:10]:
-                        gain = pos.get("gain_pct")
-                        gs = f"{gain:+.2f}%" if gain is not None else "N/A"
-                        lines.append(
-                            f"  ? {pos['symbol']} {_fmt_vnd(pos['close'])} VND ({gs})"
-                        )
-                    lines.append("")
-                else:
-                    lines.append("Danh m?c m?u: ch?a c? d? li?u.")
-            except (json.JSONDecodeError, OSError, TypeError) as e:
-                logger.warning(f"Loi doc portfolio_report.json: {e}")
-
-        # 4. Ket qua kiem chung (backtest walk-forward)
-        try:
-            run = conn.execute(
-                "SELECT metrics_json FROM backtest_runs "
-                "WHERE strategy_name = 'wf_rule_based' ORDER BY started_at DESC LIMIT 1"
-            ).fetchone()
-            if run:
-                m = json.loads(run["metrics_json"])
-                cagr = _fmt_pct(m.get("cagr_mean") * 100 if m.get("cagr_mean") is not None else None)
-                sharpe = f"{m['sharpe_mean']:.2f}" if m.get("sharpe_mean") is not None else "N/A"
-                maxdd = _fmt_pct(m.get("max_drawdown_mean") * 100 if m.get("max_drawdown_mean") is not None else None)
-                wr = _fmt_pct(m.get("win_rate_mean") * 100 if m.get("win_rate_mean") is not None else None)
-                lines.append(f"<b>?? KI?M CH?NG (walk-forward {m.get('n_windows')} k?):</b>")
-                lines.append(f"CAGR {cagr} | Sharpe {sharpe} | MaxDD {maxdd} | Win {wr}")
-                lines.append("Ph?i th?ng benchmark ?n ??nh nhi?u k? m?i ?? tin ? k?t qu? n?y ?ang theo d?i, KH?NG ph?i khuy?n ngh? mua.")
-                lines.append("")
-        except (sqlite3.Error, json.JSONDecodeError) as e:
-            logger.warning(f"Loi doc backtest: {e}")
-
-        # 5. Canh bao rui ro tuong quan
-        corr_path = Path(__file__).parent / "output" / "correlation_check.json"
-        if corr_path.exists():
-            try:
-                cdata = json.loads(corr_path.read_text(encoding="utf-8"))
-                if cdata.get("concentration_warning"):
-                    lines.append(f"?? {cdata['concentration_warning']}")
-            except (json.JSONDecodeError, OSError) as e:
-                logger.warning(f"Loi doc correlation_check.json: {e}")
-
-        conn.close()
-        return "\n".join(lines)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Loi build quant report (khong fail): {e}")
-        return ""
 
 def main() -> int:
     logging.basicConfig(
@@ -210,29 +70,16 @@ def main() -> int:
     analyst = AiAnalyst(logger=logger)
     text = build_summary(real_prices=prices_report, ai_analysis=analysis,
                          ai_analyst=analyst)
-
-    # Them bao cao dinh luong tu DB (phase 1-4+6)
-    quant = build_quant_report(logger)
-
-    print(f"\n  Tom tat bao cao ({len(text)} ky tu, +{len(quant or '')} ky tu dinh luong):")
+    print(f"\n  Tom tat bao cao ({len(text)} ky tu):")
     for line in text.splitlines():
         print(f"    {line}")
 
-    # Gui rieng 2 tin nhan de khong vuot gioi han 4096 ky tu cua Telegram:
-    # Tin 1 = phan tich dinh luong (cho giam doc), Tin 2 = watchlist + AI.
-    sent = []
-    if quant:
-        quant_text = "?? <b>PH?N T?CH ??NH L??NG BOT_INFOBUY</b>\n" + quant
-        if len(quant_text) > 4000:
-            quant_text = quant_text[:4000]
-        print(f"\n  Gui tin 1 (dinh luong, {len(quant_text)} ky tu)...")
-        sent.append(send_telegram(quant_text, logger=logger))
-    print(f"\n  Gui tin 2 (bao cao chung, {len(text)} ky tu)...")
-    sent.append(send_telegram(text, logger=logger))
+    # Gui
+    print("\n  Gui qua Telegram...")
+    success = send_telegram(text, logger=logger)
 
-    success = all(sent)
     if success:
-        print("\n  ? Da gui bao cao Telegram thanh cong")
+        print("\n  ✅ Da gui bao cao Telegram thanh cong")
         return 0
 
     # Thieu credential hoac gui loi -> khong fail CI (theo yeu cau)
