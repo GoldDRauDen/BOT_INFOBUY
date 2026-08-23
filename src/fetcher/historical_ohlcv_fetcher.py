@@ -42,9 +42,13 @@ def _throttle_retry(settings: Dict) -> Dict:
 
 
 def _fetch_history(quote: Quote, symbol: str, start: str, end: str, source: str) -> pd.DataFrame:
-    """Goi Quote.history voi retry. Tra ve DataFrame rong neu loi."""
+    """Goi Quote.history voi retry. Tra ve DataFrame rong neu loi.
+
+    Ponytail: retry giam tu 4 xuong 2 (1.5s + 3s = 4.5s/source) de khong
+    timeout GitHub Actions 6h khi nhieu ma delisted fail.
+    """
     last_err = None
-    for attempt in range(4):
+    for attempt in range(2):
         try:
             df = quote.history(symbol=symbol, start=start, end=end, interval="1D")
             if df is None:
@@ -52,10 +56,7 @@ def _fetch_history(quote: Quote, symbol: str, start: str, end: str, source: str)
             return df
         except Exception as e:  # noqa: BLE001
             last_err = e
-            # KBS community gioi han ~60 request/phut (ValueError dang RetryError):
-            # nghi 15s giua cac lan thu lai: du tranh rate-limit, khong lang phi khi
-            # loi la do du lieu symbol (32 ma/ngay loi -> tiet ~45s x 32 moi lan chay).
-            time.sleep(15.0 if attempt == 2 else 1.5)
+            time.sleep(3.0 if attempt == 0 else 0)
     logger.warning("Loi fetch %s tu %s: %s", symbol, source, last_err)
     return pd.DataFrame()
 
@@ -183,13 +184,22 @@ def fetch_all(conn=None, symbols: Optional[List[str]] = None,
         total = 0
         # KBS community: ~60 request/phut -> dam bao delay >= 1.5s (<= 40 req/phut)
         delay = max(cfg["delay"], 1.5)
+        consecutive_fails = 0
+        MAX_CONSECUTIVE_FAILS = 15  # circuit-breaker: dung neu 15 ma lien tiep loi
         for sym in symbols:
             try:
-                total += fetch_symbol_ohlcv(conn, sym, cfg, today, force_backfill=force_backfill)
+                written = fetch_symbol_ohlcv(conn, sym, cfg, today, force_backfill=force_backfill)
+                total += written
+                consecutive_fails = 0 if written > 0 else consecutive_fails + 1
             except BaseException as e:  # noqa: BLE001 - bat ca SystemExit: khong de 1 ma giet pipeline
                 import traceback
                 logger.error("%s: loi khong mong doi (khong dung pipeline): %s", sym, e)
                 logger.error(traceback.format_exc())
+                consecutive_fails += 1
+            if consecutive_fails >= MAX_CONSECUTIVE_FAILS:
+                logger.error("Circuit-breaker: %d ma lien tiep loi - dung de tranh timeout",
+                             consecutive_fails)
+                break
             time.sleep(delay)
         logger.info("Tong cong: %d dong OHLCV da ghi", total)
         return total
