@@ -9,15 +9,11 @@ Credentials:
   - env var: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (uu tien)
   - hoac config/settings.yaml: telegram.token, telegram.chat_id
 Thieu credentials -> in canh bao SKIP, exit 0 (khong fail CI).
-
-Phase 1-4+6: doc signals + backtest metrics moi nhat tu DB (data/bot_buy.db),
-so sanh VNINDEX, canh bao tuong quan. Neu khong co metric backtest -> ghi
-"chua co backtest" chu khong hien signal tran.
 """
-import json
 import logging
-import sqlite3
 import sys
+import json
+import sqlite3
 from pathlib import Path
 
 # Them src vao sys.path (nhu main.py)
@@ -48,25 +44,22 @@ def _fmt_vnd(x) -> str:
         return "N/A"
     return f"{float(x):,.0f}"
 
+
 def _fmt_pct(x, digits: int = 2) -> str:
     """Format phan tram gan gon. Tra 'N/A' neu None."""
     if x is None:
         return "N/A"
     return f"{float(x):.{digits}f}%"
 
-def build_quant_report(logger: logging.Logger) -> str:
-    """Doc DB -> bao cao dinh luong gon cho giam doc (HTML-safe, noi dung chinh).
 
-    Gom: trang thai thi truong -> top 10 ma an toan -> danh muc mau (paper)
-    -> ket qua kiem chung backtest -> canh bao rui ro.
-    """
+def build_quant_report(logger: logging.Logger) -> str:
+    """Doc DB -> bao cao dinh luong gon cho giam doc (HTML-safe)."""
     if not DB_PATH.exists():
         return ""
     try:
         conn = _db_conn()
         lines: list = []
 
-        # 1. Trang thai thi truong (regime)
         regime_path = Path(__file__).parent / "output" / "market_regime.json"
         if regime_path.exists():
             try:
@@ -84,7 +77,6 @@ def build_quant_report(logger: logging.Logger) -> str:
             except (json.JSONDecodeError, OSError):
                 pass
 
-        # 2. Top 10 ma an toan (theo score, gia moi nhat)
         try:
             rows = conn.execute(
                 """
@@ -110,7 +102,6 @@ def build_quant_report(logger: logging.Logger) -> str:
         except sqlite3.Error as e:
             logger.warning(f"Loi doc signals: {e}")
 
-        # 3. Danh muc mau (paper portfolio)
         pf_path = Path(__file__).parent / "output" / "portfolio_report.json"
         if pf_path.exists():
             try:
@@ -133,7 +124,6 @@ def build_quant_report(logger: logging.Logger) -> str:
             except (json.JSONDecodeError, OSError, TypeError) as e:
                 logger.warning(f"Loi doc portfolio_report.json: {e}")
 
-        # 4. Ket qua kiem chung (backtest walk-forward)
         try:
             run = conn.execute(
                 "SELECT metrics_json FROM backtest_runs "
@@ -152,7 +142,6 @@ def build_quant_report(logger: logging.Logger) -> str:
         except (sqlite3.Error, json.JSONDecodeError) as e:
             logger.warning(f"Loi doc backtest: {e}")
 
-        # 5. Canh bao rui ro tuong quan
         corr_path = Path(__file__).parent / "output" / "correlation_check.json"
         if corr_path.exists():
             try:
@@ -164,9 +153,10 @@ def build_quant_report(logger: logging.Logger) -> str:
 
         conn.close()
         return "\n".join(lines)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning(f"Loi build quant report (khong fail): {e}")
         return ""
+
 
 def main() -> int:
     logging.basicConfig(
@@ -179,12 +169,10 @@ def main() -> int:
     print("  Gui bao cao Telegram")
     print("=" * 50)
 
-    # PHA 2: fetch du lieu that (vietstock) + AI phan tich
     print("\n  [1/3] Fetch du lieu that (vietstock)...")
     prices_report = {}
     try:
         prices_report = run_real_data_fetch(logger)
-        # Luu lich su gia (chi khi fetch OK: error_count == 0 va co prices)
         try:
             from fetcher.real_data_fetcher import append_price_history
             history_path = append_price_history(prices_report, logger=logger)
@@ -204,22 +192,16 @@ def main() -> int:
         logger.error(f"Loi AI phan tich: {e}")
         print(f"  [LOI] {e}")
 
-    # Build summary (gom du lieu that + AI)
     print("\n  [3/3] Build summary + gui...")
     from analyst.ai_analyst import AiAnalyst
     analyst = AiAnalyst(logger=logger)
     text = build_summary(real_prices=prices_report, ai_analysis=analysis,
                          ai_analyst=analyst)
-
-    # Them bao cao dinh luong tu DB (phase 1-4+6)
     quant = build_quant_report(logger)
-
-    print(f"\n  Tom tat bao cao ({len(text)} ky tu, +{len(quant or '')} ky tu dinh luong):")
+    print(f"\n  Tom tat bao cao ({len(text)} ky tu):")
     for line in text.splitlines():
         print(f"    {line}")
 
-    # Gui rieng 2 tin nhan de khong vuot gioi han 4096 ky tu cua Telegram:
-    # Tin 1 = phan tich dinh luong (cho giam doc), Tin 2 = watchlist + AI.
     sent = []
     if quant:
         quant_text = "📊 <b>PHÂN TÍCH ĐỆNH LƯỜNG BOT_INFOBUY</b>\n" + quant
@@ -230,12 +212,11 @@ def main() -> int:
     print(f"\n  Gui tin 2 (bao cao chung, {len(text)} ky tu)...")
     sent.append(send_telegram(text, logger=logger))
 
-    success = all(sent)
+    success = any(sent)
     if success:
         print("\n  ✅ Đã gửi báo cáo Telegram thành công")
         return 0
 
-    # Thieu credential hoac gui loi -> khong fail CI (theo yeu cau)
     print("\n  ⚠️ Khong gui duoc (thieu credential hoac loi mang)")
     print("  SKIP - exit 0 (khong fail CI)")
     return 0
